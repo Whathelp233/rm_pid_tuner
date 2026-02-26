@@ -317,7 +317,431 @@ rostopic echo /pid_tuner/tuning_status
 - ⚠️ 请勿将 API Key 提交到版本控制
 - ⚠️ 建议使用环境变量而非配置文件存储密钥
 
-## 调参工作流程
+## 详细工作流程与逻辑
+
+### 整体工作流程图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           PID 自动调参完整流程                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+用户请求                 系统处理                      LLM/规则引擎
+    │                        │                            │
+    ▼                        ▼                            │
+┌─────────┐           ┌─────────────┐                     │
+│ 调用    │──────────▶│ IDLE ──────▶│                     │
+│ start_  │           │   状态      │                     │
+│ tuning  │           └──────┬──────┘                     │
+└─────────┘                  │                            │
+                             ▼                            │
+                    ┌─────────────────┐                   │
+                    │ 初始化调参参数   │                   │
+                    │ - 备份原始 PID   │                   │
+                    │ - 清空数据缓冲   │                   │
+                    │ - 设置目标值     │                   │
+                    └────────┬────────┘                   │
+                             │                            │
+                             ▼                            │
+              ┌──────────────────────────────┐            │
+              │        TUNING 状态           │            │
+              │  ┌────────────────────────┐  │            │
+              │  │     数据采集循环       │  │            │
+              │  │  ┌──────────────────┐  │  │            │
+              │  │  │ 1. 订阅控制器状态 │  │  │            │
+              │  │  │ 2. 计算误差 error │  │  │            │
+              │  │  │ 3. 添加到缓冲区   │  │  │            │
+              │  │  └────────┬─────────┘  │  │            │
+              │  └───────────┼────────────┘  │            │
+              │              │               │            │
+              │              ▼               │            │
+              │    ┌─────────────────┐       │            │
+              │    │ 缓冲区满？      │       │            │
+              │    │ (buffer_size)   │       │            │
+              │    └────────┬────────┘       │            │
+              │             │                │            │
+              │    ┌────────┴────────┐       │            │
+              │    │ 否              │ 是    │            │
+              │    ▼                 ▼       │            │
+              │  继续           ┌─────────┐  │            │
+              │  采集           │ 调用    │──┼───────────▶│
+              │                 │ LLM     │  │            │
+              │                 │ 分析    │  │            │
+              │                 └────┬────┘  │            │
+              │                      │       │            │
+              │                      ▼       │            │
+              │              ┌─────────────┐ │            │
+              │              │ LLM 返回    │◀┤            │
+              │              │ 建议 PID    │ │            │
+              │              └──────┬──────┘ │            │
+              │                     │        │            │
+              │                     ▼        │            │
+              │           ┌────────────────┐ │            │
+              │           │ 安全限制检查   │ │            │
+              │           │ - 变化率限制   │ │            │
+              │           │ - 绝对值限制   │ │            │
+              │           └───────┬────────┘ │            │
+              │                   │          │            │
+              │                   ▼          │            │
+              │           ┌────────────────┐ │            │
+              │           │ 应用新参数     │ │            │
+              │           │ 更新控制器 PID │ │            │
+              │           └───────┬────────┘ │            │
+              │                   │          │            │
+              │                   ▼          │            │
+              │           ┌────────────────┐ │            │
+              │           │ 检查收敛条件   │ │            │
+              │           │ error < 阈值？ │ │            │
+              │           │ rounds > 最大？│ │            │
+              │           └───────┬────────┘ │            │
+              │         是        │        否│            │
+              │          ┌────────┴────────┐ │            │
+              │          ▼                 ▼ │            │
+              │    ┌───────────┐    清空缓冲区│            │
+              │    │ 完成调参   │    继续采集 │            │
+              │    └───────────┘             │            │
+              └──────────────────────────────┘            │
+                             │                            │
+                             ▼                            │
+                    ┌─────────────────┐                   │
+                    │   COMPLETED     │                   │
+                    │   或 STOPPED    │                   │
+                    └─────────────────┘                   │
+```
+
+### 核心组件工作逻辑
+
+#### 1. PidTuner 主控制器 (pid_tuner.cpp)
+
+```cpp
+// 状态机定义
+enum class State {
+  IDLE,        // 空闲状态，等待调参请求
+  TUNING,      // 调参中，正在采集数据
+  PAUSED,      // 暂停状态
+  ERROR,       // 错误状态
+  COMPLETED    // 调参完成
+};
+
+// 调参循环核心逻辑
+void PidTuner::tuningLoop() {
+  while (ros::ok() && state_ == State::TUNING) {
+    // 1. 采集数据
+    collectData();
+
+    // 2. 检查缓冲区是否已满
+    if (data_buffer_->isFull()) {
+      // 3. 调用 LLM 分析
+      auto suggestion = callLLMAnalyze();
+
+      // 4. 应用安全限制
+      applySafetyLimits(suggestion);
+
+      // 5. 更新 PID 参数
+      updatePidParams(suggestion);
+
+      // 6. 检查收敛条件
+      if (checkConvergence()) {
+        state_ = State::COMPLETED;
+        break;
+      }
+
+      // 7. 清空缓冲区，开始下一轮
+      data_buffer_->clear();
+      current_round_++;
+    }
+
+    rate_.sleep();
+  }
+}
+```
+
+#### 2. DataBuffer 数据缓冲器 (data_buffer.cpp)
+
+```cpp
+// 线程安全的数据缓冲
+class DataBuffer {
+private:
+  std::deque<DataPoint> buffer_;    // 环形缓冲区
+  std::mutex mutex_;                 // 线程安全锁
+  size_t max_size_;                  // 最大容量
+
+  // 增量统计缓存（避免重复计算）
+  mutable bool cache_valid_ = false;
+  mutable double cached_sum_error_ = 0.0;
+  mutable double cached_sum_abs_error_ = 0.0;
+  mutable double cached_max_error_ = 0.0;
+
+public:
+  // 添加数据点（自动更新缓存）
+  void add(const DataPoint& point) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (buffer_.size() >= max_size_) {
+      // 移除最旧的数据点，更新缓存
+      removeFromCache(buffer_.front());
+      buffer_.pop_front();
+    }
+    buffer_.push_back(point);
+    addToCache(point);
+  }
+
+  // 计算性能指标
+  Metrics calculateMetrics() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return {
+      .mean_error = cached_sum_error_ / buffer_.size(),
+      .mae = cached_sum_abs_error_ / buffer_.size(),
+      .max_error = cached_max_error_,
+      .rmse = std::sqrt(cached_sum_sq_error_ / buffer_.size()),
+      .itae = calculateITAE(),  // 积分时间加权绝对误差
+      .ise = calculateISE(),    // 积分平方误差
+      .iae = calculateIAE()     // 积分绝对误差
+    };
+  }
+};
+```
+
+#### 3. LLM 接口服务 (llm_interface.py)
+
+```python
+class LLMInterface:
+    def handle_analyze_request(self, req):
+        """处理 LLM 分析请求"""
+
+        # 1. 构建提示词
+        prompt = self._build_prompt(
+            controller_name=req.controller_name,
+            current_params=(req.current_p, req.current_i, req.current_d),
+            data_text=req.data_text,
+            conservative_mode=req.conservative_mode
+        )
+
+        # 2. 调用 LLM API（带重试机制）
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = self._call_api(prompt)
+                if response.status_code == 200:
+                    return self._parse_response(response)
+            except Timeout:
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)  # 指数退避
+                    continue
+
+        # 3. LLM 失败时使用规则引擎后备
+        return self._fallback_analysis(req)
+
+    def _build_prompt(self, ...):
+        """构建发送给 LLM 的提示词"""
+        return f"""
+你是一个 PID 控制专家。根据以下控制数据，分析系统性能并给出 PID 参数调整建议。
+
+控制器类型: {controller_name}
+当前参数: P={p}, I={i}, D={d}
+保守模式: {conservative_mode}
+
+控制数据（时间, 设定值, 实际值, 误差）:
+{data_text}
+
+当前性能指标:
+- 平均误差: {mean_error}
+- 最大误差: {max_error}
+- RMSE: {rmse}
+
+请以 JSON 格式返回:
+{{
+  "analysis": "性能分析",
+  "suggested_p": 建议P值,
+  "suggested_i": 建议I值,
+  "suggested_d": 建议D值
+}}
+"""
+
+    def _fallback_analysis(self, req):
+        """规则引擎后备方案"""
+        # 基于误差特征的规则调参
+        if mean_error > threshold:
+            # 稳态误差大，增加 I
+            new_i = current_i * 1.2
+        if overshoot > threshold:
+            # 超调大，减少 P，增加 D
+            new_p = current_p * 0.8
+            new_d = current_d * 1.2
+        # ...
+```
+
+#### 4. ControllerFactory 控制器工厂 (controller_factory.h)
+
+```cpp
+// 控制器配置工厂 - 支持不同控制器类型
+class ControllerConfigFactory {
+public:
+  static std::unique_ptr<IControllerConfig> create(const std::string& type) {
+    if (type == "gimbal_controller") {
+      return std::make_unique<GimbalControllerConfig>();
+    } else if (type == "chassis_controller") {
+      return std::make_unique<ChassisControllerConfig>();
+    } else if (type == "shooter_controller") {
+      return std::make_unique<ShooterControllerConfig>();
+    }
+    // 支持自定义控制器
+    return std::make_unique<CustomControllerConfig>(type);
+  }
+};
+
+// 云台控制器配置
+class GimbalControllerConfig : public IControllerConfig {
+public:
+  std::string getParamNamespace() const override {
+    return "/gimbal_controller";
+  }
+  std::vector<std::string> getJointNames() const override {
+    return {"yaw", "pitch"};
+  }
+  PidLimits getLimits() const override {
+    return {.p_max = 50.0, .i_max = 5.0, .d_max = 5.0};
+  }
+};
+```
+
+### 数据流转图
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                           数据流转                                   │
+└─────────────────────────────────────────────────────────────────────┘
+
+  rm_controllers                    rm_pid_tuner                    外部
+       │                                 │                           │
+       │ /joint_states                   │                           │
+       │────────────────────────────────▶│                           │
+       │                                 │                           │
+       │  读取 PID 参数                   │                           │
+       │◀────────────────────────────────│                           │
+       │  (ros::param)                   │                           │
+       │                                 │                           │
+       │                                 │  HTTPS POST                │
+       │                                 │──────────────────────────▶│ LLM API
+       │                                 │                           │ (MiniMax)
+       │                                 │  JSON Response            │
+       │                                 │◀──────────────────────────│
+       │                                 │                           │
+       │  更新 PID 参数                   │                           │
+       │◀────────────────────────────────│                           │
+       │  (ros::param::set)              │                           │
+       │                                 │                           │
+       │                                 │ /tuning_status             │
+       │                                 │──────────────────────────▶│ Dashboard
+       │                                 │                           │ Web/rqt
+       │                                 │                           │
+```
+
+### 调参算法逻辑
+
+#### LLM 分析流程
+
+```
+输入: 当前 PID 参数 + 误差数据缓冲区
+输出: 建议的 PID 参数
+
+Step 1: 数据预处理
+  - 将缓冲区数据转换为文本格式
+  - 计算统计指标 (mean, max, RMSE, ITAE, ISE, IAE)
+
+Step 2: 构建 Prompt
+  - 包含控制器类型、当前参数、误差数据、性能指标
+  - 指定输出格式为 JSON
+
+Step 3: 调用 LLM API
+  - 发送 HTTPS POST 请求
+  - 超时/失败时进行指数退避重试（最多3次）
+
+Step 4: 解析响应
+  - 使用 nlohmann_json 解析 JSON 响应
+  - 提取 suggested_p, suggested_i, suggested_d
+
+Step 5: 安全限制
+  - 每轮变化率限制: max_change = 50%
+  - 绝对值限制: P < 100, I < 10, D < 10
+  - 保守模式: 降低增益，可能禁用 D
+```
+
+#### 规则引擎后备逻辑
+
+```cpp
+// 当 LLM 不可用时的后备调参策略
+PidParams fallbackAdjustment(const Metrics& metrics, const PidParams& current) {
+  PidParams suggested = current;
+
+  // 1. 稳态误差分析
+  if (metrics.mean_error > threshold) {
+    // 存在稳态误差，增加积分增益
+    suggested.i *= 1.2;
+  }
+
+  // 2. 超调分析
+  if (metrics.max_error > overshoot_threshold) {
+    // 超调过大，减少比例，增加微分
+    suggested.p *= 0.8;
+    suggested.d *= 1.2;
+  }
+
+  // 3. 响应速度分析
+  if (metrics.rise_time > slow_threshold) {
+    // 响应太慢，增加比例
+    suggested.p *= 1.3;
+  }
+
+  // 4. 震荡分析
+  if (metrics.oscillation_count > 3) {
+    // 震荡过多，减少比例，增加微分
+    suggested.p *= 0.7;
+    suggested.d *= 1.5;
+  }
+
+  return suggested;
+}
+```
+
+### 状态机转换图
+
+```
+                    ┌─────────────────────────────────────┐
+                    │                                     │
+                    ▼                                     │
+              ┌─────────┐   start_tuning    ┌─────────┐   │
+              │  IDLE   │──────────────────▶│ TUNING  │   │
+              └─────────┘                   └────┬────┘   │
+                    ▲                            │        │
+                    │                            │        │
+                    │           ┌────────────────┼─────── │
+                    │           │                │        │
+                    │     pause │          stop  │  error │
+                    │           │                │        │
+                    │           ▼                ▼        ▼
+                    │     ┌─────────┐      ┌─────────┐ ┌───────┐
+                    │     │ PAUSED  │      │STOPPED/ │ │ ERROR │
+                    │     └────┬────┘      │COMPLETED│ └───┬───┘
+                    │          │           └─────────┘     │
+                    │  resume  │                           │
+                    └──────────┼───────────────────────────┘
+                               │            resume
+                               ▼
+                         ┌─────────┐
+                         │ TUNING  │
+                         └─────────┘
+```
+
+### 性能指标说明
+
+| 指标 | 公式 | 说明 |
+|------|------|------|
+| MAE | $\frac{1}{n}\sum\|e_i\|$ | 平均绝对误差 |
+| RMSE | $\sqrt{\frac{1}{n}\sum e_i^2}$ | 均方根误差 |
+| ITAE | $\sum t_i \cdot \|e_i\|$ | 积分时间加权绝对误差（惩罚长时间误差） |
+| ISE | $\sum e_i^2$ | 积分平方误差（惩罚大误差） |
+| IAE | $\sum \|e_i\|$ | 积分绝对误差 |
+
+### 简化工作流程
 
 1. **启动系统**：启动机器人控制器和 PID 调参器
 2. **发起调参**：通过服务调用指定要调参的控制器和关节
