@@ -1,0 +1,23 @@
+# 开始 PID 调参服务
+
+# 请求
+string controller_name        # 控制器名称 (e.g., "gimbal_controller")
+string[] joint_names          # 要调参的关节列表 (e.g., ["yaw", "pitch"])
+
+float64 target_setpoint       # 目标设定值
+float64 tolerance             # 允许误差 (默认 0.3)
+
+uint32 max_rounds             # 最大调参轮数 (默认 30)
+uint32 buffer_size            # 数据缓冲大小 (默认 25)
+
+bool conservative_mode        # 是否使用保守模式 (默认 true)
+float64 z_n_gain_factor       # Z-N 增益折扣因子 (默认 0.5)
+
+bool auto_save                # 是否自动保存参数到配置文件
+
+---
+# 响应
+bool success                  # 是否成功启动
+string message                # 状态消息或错误信息
+
+uint32 session_id             # 调参会话 ID (用于跟踪和日志)

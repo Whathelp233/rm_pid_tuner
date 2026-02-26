@@ -1,0 +1,19 @@
+# 停止 PID 调参服务
+
+# 请求
+string controller_name        # 控制器名称
+
+bool save_params              # 是否保存参数到配置文件
+bool restore_params           # 是否恢复到调参前的参数
+
+---
+# 响应
+bool success                  # 是否成功停止
+string message                # 状态消息
+
+rm_pid_tuner/PidParams[] final_params      # 最终 PID 参数
+rm_pid_tuner/PidParams[] original_params   # 原始 PID 参数 (如果 restore_params=true)
+
+uint32 total_rounds           # 总调参轮数
+float64 total_time            # 总耗时 (秒)
+float64 final_avg_error       # 最终平均误差

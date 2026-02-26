@@ -1,0 +1,16 @@
+# 设置 PID 参数服务
+
+# 请求
+string controller_name        # 控制器名称
+
+rm_pid_tuner/PidParams[] params  # PID 参数数组 (支持多关节)
+
+bool apply_immediately        # 是否立即应用到控制器
+bool save_to_file             # 是否保存到配置文件
+
+---
+# 响应
+bool success                  # 是否成功设置
+string message                # 状态消息或错误信息
+
+rm_pid_tuner/PidParams[] applied_params  # 实际应用的参数 (可能经过限幅)

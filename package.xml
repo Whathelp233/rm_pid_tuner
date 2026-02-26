@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>rm_pid_tuner</name>
+  <version>0.1.0</version>
+  <description>LLM-based PID auto-tuning system for ROS Noetic</description>
+
+  <maintainer email="your_email@example.com">Your Name</maintainer>
+  <license>BSD</license>
+
+  <author email="your_email@example.com">Your Name</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <!-- Build dependencies -->
+  <build_depend>message_generation</build_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>geometry_msgs</build_depend>
+  <build_depend>nav_msgs</build_depend>
+  <build_depend>rm_msgs</build_depend>
+  <build_depend>realtime_tools</build_depend>
+  <build_depend>control_toolbox</build_depend>
+  <build_depend>libnlohmann-json-dev</build_depend>
+
+  <!-- Build and run dependencies -->
+  <build_export_depend>roscpp</build_export_depend>
+  <build_export_depend>rospy</build_export_depend>
+  <build_export_depend>std_msgs</build_export_depend>
+  <build_export_depend>geometry_msgs</build_export_depend>
+  <build_export_depend>nav_msgs</build_export_depend>
+  <build_export_depend>rm_msgs</build_export_depend>
+  <build_export_depend>realtime_tools</build_export_depend>
+
+  <!-- Run dependencies -->
+  <exec_depend>message_runtime</exec_depend>
+  <exec_depend>dynamic_reconfigure</exec_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>rm_msgs</exec_depend>
+  <exec_depend>realtime_tools</exec_depend>
+  <exec_depend>control_toolbox</exec_depend>
+  <exec_depend>rosbridge_suite</exec_depend>
+
+  <!-- Python dependencies -->
+  <exec_depend>python3-requests</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+
+  <export>
+    <!-- rqt plugin -->
+    <rqt_gui plugin="${prefix}/plugins/rqt_pid_tuner/plugin.xml"/>
+  </export>
+</package>

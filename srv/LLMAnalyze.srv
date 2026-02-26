@@ -1,0 +1,34 @@
+# LLM 分析服务
+# 用于 C++ 核心调用 Python LLM 接口
+
+# 请求
+string controller_name        # 控制器名称
+string joint_name             # 关节名称
+
+# 当前 PID 参数
+float64 current_p
+float64 current_i
+float64 current_d
+
+# 控制数据 (格式化的文本)
+string data_text              # 包含误差、设定值等的文本
+
+# 调参配置
+bool conservative_mode        # 保守模式
+int32 round_number            # 当前轮次
+
+---
+# 响应
+bool success                  # 是否成功
+string message                # 状态消息或错误信息
+
+# 分析结果
+string analysis               # LLM 的分析说明
+float64 suggested_p           # 建议的 P 参数
+float64 suggested_i           # 建议的 I 参数
+float64 suggested_d           # 建议的 D 参数
+string status                 # 状态: "TUNING", "DONE", "ERROR"
+
+# 元数据
+bool used_fallback            # 是否使用了后备逻辑
+float64 response_time         # 响应时间 (秒)

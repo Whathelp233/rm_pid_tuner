@@ -1,0 +1,113 @@
+# PID Tuner Configuration
+# llm-pid-tuner ROS 适配配置文件
+
+# ============================================================================
+# LLM API 配置
+# ============================================================================
+llm:
+  # API 端点 URL (MiniMax API - 使用 HTTPS 加密传输)
+  # 国内节点: https://api.minimax.chat/v1
+  # 海外节点: https://api.minimaxi.com/v1
+  api_url: "https://api.minimax.chat/v1"
+
+  # API Key (必须替换为实际的 API Key)
+  # 安全建议: 使用环境变量而非硬编码
+  # 在 launch 文件中使用: $(env MINIMAX_API_KEY)
+  # 或在启动前设置: export MINIMAX_API_KEY="your-key-here"
+  api_key: "your-api-key-here"
+
+  # 模型名称
+  model: "MiniMax-M2.5"
+
+  # LLM 参数
+  temperature: 0.3
+  max_tokens: 500
+  timeout: 30.0
+
+# ============================================================================
+# 调参配置
+# ============================================================================
+tuning:
+  # 数据缓冲大小 (平衡速度和准确性)
+  buffer_size: 25
+
+  # 最大调参轮数
+  max_rounds: 30
+
+  # 最小误差阈值 (完成条件)
+  min_error_threshold: 0.3
+
+  # 保守模式 (减少超调)
+  # True: 初始用 PI 控制器 + 0.5x 增益，更稳定但收敛稍慢
+  # False: 激进 PID，可能超调但收敛快
+  conservative_mode: true
+
+  # Z-N 增益折扣因子 (保守模式用)
+  z_n_gain_factor: 0.5
+
+  # 参数变化限制
+  max_p_change: 0.5   # 每轮 P 最大变化 50%
+  max_i_change: 0.5   # 每轮 I 最大变化 50%
+  max_d_change: 0.5   # 每轮 D 最大变化 50%
+
+  # 安全限制
+  p_max: 100.0
+  i_max: 10.0
+  d_max: 10.0
+
+# ============================================================================
+# 控制器配置
+# ============================================================================
+controllers:
+  # 云台控制器
+  gimbal:
+    yaw:
+      # 状态话题
+      topic_pos_state: "/gimbal_controller/pos_state"
+      topic_error: "/gimbal_controller/error"
+
+      # PID 参数前缀
+      param_prefix: "/gimbal_controller/controllers/yaw/pid_pos"
+
+      # 默认目标值
+      default_target: 0.0
+
+    pitch:
+      topic_pos_state: "/gimbal_controller/pos_state"
+      topic_error: "/gimbal_controller/error"
+      param_prefix: "/gimbal_controller/controllers/pitch/pid_pos"
+      default_target: 0.0
+
+  # 底盘控制器
+  chassis:
+    follow:
+      topic_odom: "/chassis_controller/odom"
+      param_prefix: "/chassis_controller/pid_follow"
+      default_target: 0.0
+
+# ============================================================================
+# 可视化配置
+# ============================================================================
+visualization:
+  # RViz 可视化
+  frame_id: "base_link"
+  scale: 0.1
+  show_setpoint: true
+  show_error: true
+  show_params: true
+
+  # 发布速率
+  publish_rate: 10.0
+
+# ============================================================================
+# Web Dashboard 配置
+# ============================================================================
+web:
+  # rosbridge 端口
+  rosbridge_port: 9090
+
+  # Web 服务器端口
+  web_port: 8080
+
+  # 启用 Web 界面
+  enabled: true

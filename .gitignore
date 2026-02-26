@@ -1,0 +1,53 @@
+# Build directories
+build/
+devel/
+cmake-build-*/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# ROS
+*.msg.autosave
+*.srv.autosave
+
+# Logs
+*.log
+logs/
+
+# Config with sensitive data
+config/api_keys.yaml
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Visualization generated files
+visualization/web/node_modules/
+visualization/web/.next/
+visualization/web/out/
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Documentation generated
+docs/_build/

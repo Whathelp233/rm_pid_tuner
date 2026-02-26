@@ -1,0 +1,16 @@
+<library path="src">
+  <class name="PidTuner" type="rqt_pid_tuner.pid_tuner_plugin.PidTunerPlugin"
+         base_class_type="rqt_gui_py::Plugin">
+    <description>
+      LLM-based PID Auto-Tuning Plugin for rqt
+    </description>
+    <qtgui>
+      <group>
+        <label>RoboMaster</label>
+      </group>
+      <label>PID Tuner</label>
+      <icon type="theme">preferences-system</icon>
+      <statustip>LLM-based PID auto-tuning interface</statustip>
+    </qtgui>
+  </class>
+</library>

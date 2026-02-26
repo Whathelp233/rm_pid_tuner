@@ -1,0 +1,61 @@
+<!-- PID Tuner Launch File -->
+<launch>
+  <!-- 参数配置文件 -->
+  <arg name="config_file" default="$(find rm_pid_tuner)/config/pid_tuner_config.yaml" />
+
+  <!-- LLM API Key (推荐使用环境变量) -->
+  <!-- 方式1: 从环境变量读取 (推荐) -->
+  <!--   export MINIMAX_API_KEY="your-api-key-here" -->
+  <!--   roslaunch rm_pid_tuner pid_tuner.launch -->
+  <!-- 方式2: 直接传递参数 (不推荐，会暴露在命令行历史中) -->
+  <arg name="api_key" default="$(optenv MINIMAX_API_KEY your-api-key-here)" />
+
+  <!-- LLM API URL (可选覆盖) -->
+  <arg name="api_url" default="" />
+
+  <!-- 是否启动 Web 界面 -->
+  <arg name="web" default="false" />
+
+  <!-- 是否启动 RViz -->
+  <arg name="rviz" default="false" />
+
+  <!-- 是否启用 LLM 调参 (false 则只使用本地规则) -->
+  <arg name="use_llm" default="true" />
+
+  <!-- 加载配置 -->
+  <rosparam file="$(arg config_file)" command="load" ns="pid_tuner" />
+
+  <!-- PID Tuner 节点 -->
+  <node name="pid_tuner" pkg="rm_pid_tuner" type="pid_tuner_node" output="screen">
+    <rosparam file="$(arg config_file)" />
+    <!-- 从参数覆盖 API Key (优先级高于配置文件) -->
+    <param name="llm/api_key" value="$(arg api_key)" />
+    <!-- 如果指定了 API URL，则覆盖 -->
+    <param name="llm/api_url" value="$(arg api_url)" if="$(eval api_url != '')" />
+  </node>
+
+  <!-- LLM Interface 节点 -->
+  <node if="$(arg use_llm)" name="llm_interface" pkg="rm_pid_tuner" type="llm_interface.py" output="screen">
+    <rosparam file="$(arg config_file)" />
+    <!-- 从参数覆盖 API Key -->
+    <param name="llm/api_key" value="$(arg api_key)" />
+    <!-- 如果指定了 API URL，则覆盖 -->
+    <param name="llm/api_url" value="$(arg api_url)" if="$(eval api_url != '')" />
+  </node>
+
+  <!-- rosbridge (用于 Web 界面) -->
+  <group if="$(arg web)">
+    <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
+      <arg name="port" value="9090" />
+    </include>
+
+    <!-- Web 服务器 -->
+    <!-- 需要: roscd rm_pid_tuner && cd visualization/web && python3 -m http.server 8080 -->
+  </group>
+
+  <!-- RViz -->
+  <group if="$(arg rviz)">
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find rm_pid_tuner)/config/pid_tuner.rviz" />
+  </group>
+
+</launch>
