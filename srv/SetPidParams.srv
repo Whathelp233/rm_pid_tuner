@@ -7,6 +7,7 @@ rm_pid_tuner/PidParams[] params  # PID 参数数组 (支持多关节)
 
 bool apply_immediately        # 是否立即应用到控制器
 bool save_to_file             # 是否保存到配置文件
+string filepath               # 保存文件路径 (可选, 为空则使用默认路径)
 
 ---
 # 响应

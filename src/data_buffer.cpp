@@ -203,7 +203,7 @@ double DataBuffer::calculateErrorStdDev() const
   return std::sqrt(calculateErrorVariance());
 }
 
-const DataPoint& DataBuffer::getLatest() const
+DataPoint DataBuffer::getLatest() const
 {
   std::lock_guard<std::mutex> lock(mutex_);
   if (buffer_.empty())

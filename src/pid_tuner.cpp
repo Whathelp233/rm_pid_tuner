@@ -211,7 +211,8 @@ bool PidTuner::startTuningCB(StartTuning::Request& req, StartTuning::Response& r
   }
 
   // 验证控制器名称格式（防止注入）
-  // 只允许字母、数字和下划线，  auto isValidName = [](const std::string& name) -> bool
+  // 只允许字母、数字和下划线
+  auto isValidName = [](const std::string& name) -> bool
   {
     if (name.empty() || name.length() > 64)
       return false;

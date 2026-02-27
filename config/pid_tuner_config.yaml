@@ -5,19 +5,28 @@
 # LLM API 配置
 # ============================================================================
 llm:
-  # API 端点 URL (MiniMax API - 使用 HTTPS 加密传输)
-  # 国内节点: https://api.minimax.chat/v1
-  # 海外节点: https://api.minimaxi.com/v1
-  api_url: "https://api.minimax.chat/v1"
+  # LLM 提供商: deepseek, minimax, openai
+  provider: "deepseek"
+
+  # API 端点 URL (根据提供商自动选择，也可手动指定)
+  # DeepSeek: https://api.deepseek.com/v1
+  # MiniMax 国内: https://api.minimax.chat/v1
+  # MiniMax 海外: https://api.minimaxi.com/v1
+  # OpenAI: https://api.openai.com/v1
+  api_url: "https://api.deepseek.com/v1"
 
   # API Key (必须替换为实际的 API Key)
   # 安全建议: 使用环境变量而非硬编码
-  # 在 launch 文件中使用: $(env MINIMAX_API_KEY)
-  # 或在启动前设置: export MINIMAX_API_KEY="your-key-here"
+  # DeepSeek: export DEEPSEEK_API_KEY="your-key-here"
+  # MiniMax: export MINIMAX_API_KEY="your-key-here"
+  # 通用: export LLM_API_KEY="your-key-here"
   api_key: "your-api-key-here"
 
   # 模型名称
-  model: "MiniMax-M2.5"
+  # DeepSeek: deepseek-chat, deepseek-reasoner
+  # MiniMax: MiniMax-M2.5
+  # OpenAI: gpt-4o, gpt-4o-mini
+  model: "deepseek-chat"
 
   # LLM 参数
   temperature: 0.3

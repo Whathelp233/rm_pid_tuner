@@ -34,16 +34,42 @@ from rm_pid_tuner.srv import LLMAnalyze, LLMAnalyzeResponse
 class LLMInterface:
     """LLM API 客户端，用于 PID 参数分析和优化建议"""
 
+    # 支持的 LLM 提供商配置
+    PROVIDERS = {
+        'deepseek': {
+            'api_url': 'https://api.deepseek.com/v1',
+            'model': 'deepseek-chat',
+            'env_key': 'DEEPSEEK_API_KEY'
+        },
+        'minimax': {
+            'api_url': 'https://api.minimax.chat/v1',
+            'model': 'MiniMax-M2.5',
+            'env_key': 'MINIMAX_API_KEY'
+        },
+        'openai': {
+            'api_url': 'https://api.openai.com/v1',
+            'model': 'gpt-4o',
+            'env_key': 'OPENAI_API_KEY'
+        }
+    }
+
     def __init__(self):
         """初始化 LLM 接口，从 ROS 参数服务器或环境变量读取配置"""
+        # 获取提供商类型
+        self.provider = rospy.get_param('~llm/provider', 'deepseek')
+        provider_config = self.PROVIDERS.get(self.provider, self.PROVIDERS['deepseek'])
+
         # 优先从环境变量读取 API Key，然后从 ROS 参数
-        self.api_key = os.environ.get('MINIMAX_API_KEY', '')
+        env_key_name = provider_config.get('env_key', 'DEEPSEEK_API_KEY')
+        self.api_key = os.environ.get(env_key_name, '')
+        if not self.api_key:
+            self.api_key = os.environ.get('LLM_API_KEY', '')  # 通用环境变量
         if not self.api_key:
             self.api_key = rospy.get_param('~llm/api_key', '')
 
-        # 其他配置从参数服务器读取
-        self.api_url = rospy.get_param('~llm/api_url', 'https://api.minimax.chat/v1')
-        self.model = rospy.get_param('~llm/model', 'MiniMax-M2.5')
+        # 其他配置从参数服务器读取，使用提供商默认值
+        self.api_url = rospy.get_param('~llm/api_url', provider_config['api_url'])
+        self.model = rospy.get_param('~llm/model', provider_config['model'])
         self.temperature = rospy.get_param('~llm/temperature', 0.3)
         self.max_tokens = rospy.get_param('~llm/max_tokens', 500)
         self.timeout = rospy.get_param('~llm/timeout', 30.0)
@@ -52,12 +78,12 @@ class LLMInterface:
         if not self.api_key or self.api_key == 'your-api-key-here':
             rospy.logwarn("[LLMInterface] API Key not configured! "
                          "Will use fallback logic. "
-                         "Set MINIMAX_API_KEY environment variable or ~llm/api_key parameter.")
+                         f"Set {env_key_name} environment variable or ~llm/api_key parameter.")
             self.api_key = ''
         else:
             # 隐藏 API Key 的大部分字符
             masked_key = self.api_key[:4] + '****' + self.api_key[-4:] if len(self.api_key) > 8 else '****'
-            rospy.loginfo(f"[LLMInterface] Initialized with model: {self.model}, API key: {masked_key}")
+            rospy.loginfo(f"[LLMInterface] Initialized with provider: {self.provider}, model: {self.model}, API key: {masked_key}")
 
         # 系统 Prompt
         self.system_prompt = """你是一个 PID 控制算法专家。请分析以下控制系统数据，判断当前 PID 参数表现并给出优化建议。
