@@ -269,10 +269,10 @@ bool PidTuner::startTuningCB(StartTuning::Request& req, StartTuning::Response& r
     return true;
   }
 
-  if (req.buffer_size > 500 || req.buffer_size < 10)
+  if (req.buffer_size > 1000 || req.buffer_size < 50)
   {
     res.success = false;
-    res.message = "buffer_size must be between 10 and 500";
+    res.message = "buffer_size must be between 50 and 1000";
     return true;
   }
 
@@ -354,7 +354,7 @@ bool PidTuner::startTuningCB(StartTuning::Request& req, StartTuning::Response& r
   }
 
   config.max_rounds = req.max_rounds > 0 ? req.max_rounds : 30;
-  config.buffer_size = req.buffer_size > 0 ? req.buffer_size : 300;  // 默认约5秒数据 (50Hz * 5s)
+  config.buffer_size = req.buffer_size > 0 ? req.buffer_size : 500;  // 默认约10秒数据 (50Hz * 10s)
   config.min_error_threshold = req.tolerance > 0 ? req.tolerance : 0.3;
   config.conservative_mode = req.conservative_mode;
   config.z_n_gain_factor = req.z_n_gain_factor > 0 ? req.z_n_gain_factor : 0.5;
