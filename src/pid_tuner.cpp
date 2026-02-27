@@ -11,6 +11,7 @@
 #include <ros/package.h>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 
 namespace rm_pid_tuner
 {
@@ -268,10 +269,10 @@ bool PidTuner::startTuningCB(StartTuning::Request& req, StartTuning::Response& r
     return true;
   }
 
-  if (req.buffer_size > 100 || req.buffer_size < 5)
+  if (req.buffer_size > 500 || req.buffer_size < 10)
   {
     res.success = false;
-    res.message = "buffer_size must be between 5 and 100";
+    res.message = "buffer_size must be between 10 and 500";
     return true;
   }
 
@@ -353,7 +354,7 @@ bool PidTuner::startTuningCB(StartTuning::Request& req, StartTuning::Response& r
   }
 
   config.max_rounds = req.max_rounds > 0 ? req.max_rounds : 30;
-  config.buffer_size = req.buffer_size > 0 ? req.buffer_size : 25;
+  config.buffer_size = req.buffer_size > 0 ? req.buffer_size : 300;  // 默认约5秒数据 (50Hz * 5s)
   config.min_error_threshold = req.tolerance > 0 ? req.tolerance : 0.3;
   config.conservative_mode = req.conservative_mode;
   config.z_n_gain_factor = req.z_n_gain_factor > 0 ? req.z_n_gain_factor : 0.5;
@@ -962,20 +963,92 @@ std::string PidTuner::generateDataText(const std::string& joint_name, const Data
     return "";
 
   auto metrics = buffer.calculateMetrics();
+  auto all_data = buffer.getAll();
 
+  // ===== 系统基本信息 =====
+  oss << "## 系统信息\n";
+  oss << "控制器: " << config_.controller_name << "\n";
+  oss << "关节: " << joint_name << "\n";
   oss << "当前 PID 参数: P=" << joint->p << ", I=" << joint->i << ", D=" << joint->d << "\n";
-  oss << "目标值: " << joint->target_setpoint << "\n";
-  oss << "当前值: " << metrics.latest_value << "\n";
-  oss << "平均误差: " << metrics.avg_error << "\n";
-  oss << "最大误差: " << metrics.max_error << "\n";
-  oss << "误差标准差: " << metrics.error_stddev << "\n\n";
-  oss << "最近数据 (时间, 设定值, 实际值, 误差):\n";
+  oss << "目标设定值: " << joint->target_setpoint << "\n";
+  oss << "调参轮次: " << current_round_ << "/" << config_.max_rounds << "\n";
+  oss << "保守模式: " << (config_.conservative_mode ? "是" : "否") << "\n\n";
 
-  auto recent = buffer.getRecent(20);
-  for (const auto& point : recent)
+  // ===== 综合性能指标 =====
+  oss << "## 性能指标\n";
+  oss << "当前值: " << std::fixed << std::setprecision(4) << metrics.latest_value << "\n";
+  oss << "平均绝对误差 (MAE): " << metrics.avg_error << "\n";
+  oss << "最大误差: " << metrics.max_error << "\n";
+  oss << "最小误差: " << metrics.min_error << "\n";
+  oss << "均方根误差 (RMSE): " << std::sqrt(metrics.error_variance + metrics.avg_error * metrics.avg_error) << "\n";
+  oss << "误差标准差: " << metrics.error_stddev << "\n";
+  oss << "误差方差: " << metrics.error_variance << "\n";
+  oss << "ITAE (时间加权绝对误差积分): " << metrics.itae << "\n";
+  oss << "ISE (平方误差积分): " << metrics.ise << "\n";
+  oss << "IAE (绝对误差积分): " << metrics.iae << "\n\n";
+
+  // ===== 趋势分析 =====
+  oss << "## 趋势分析\n";
+  if (all_data.size() >= 3)
   {
-    oss << point.timestamp << ", " << point.setpoint << ", "
-        << point.value << ", " << point.error << "\n";
+    // 计算误差变化趋势
+    int rising_count = 0, falling_count = 0;
+    double total_change = 0;
+    int oscillation_crossings = 0;
+    double prev_error = all_data[0].error;
+
+    for (size_t i = 1; i < all_data.size(); i++)
+    {
+      double change = all_data[i].error - all_data[i-1].error;
+      total_change += change;
+
+      if (change > 0.01) rising_count++;
+      else if (change < -0.01) falling_count++;
+
+      // 检测过零点（震荡）
+      if ((prev_error > 0 && all_data[i].error < 0) ||
+          (prev_error < 0 && all_data[i].error > 0))
+      {
+        oscillation_crossings++;
+      }
+      prev_error = all_data[i].error;
+    }
+
+    oss << "误差变化趋势: ";
+    if (rising_count > falling_count * 1.5)
+      oss << "上升 (误差增大)\n";
+    else if (falling_count > rising_count * 1.5)
+      oss << "下降 (误差减小)\n";
+    else
+      oss << "稳定\n";
+
+    oss << "总误差变化: " << total_change << "\n";
+    oss << "震荡过零次数: " << oscillation_crossings << "\n";
+
+    if (oscillation_crossings > 3)
+      oss << "震荡程度: 严重震荡\n";
+    else if (oscillation_crossings > 1)
+      oss << "震荡程度: 轻微震荡\n";
+    else
+      oss << "震荡程度: 无明显震荡\n";
+  }
+  oss << "\n";
+
+  // ===== 完整时间序列数据 =====
+  oss << "## 时间序列数据 (共 " << all_data.size() << " 个采样点)\n";
+  oss << "格式: 时间戳, 设定值, 实际值, 误差, 控制输出, P项, I项, D项\n";
+
+  for (const auto& point : all_data)
+  {
+    oss << std::fixed << std::setprecision(4)
+        << point.timestamp << ", "
+        << point.setpoint << ", "
+        << point.value << ", "
+        << point.error << ", "
+        << point.control << ", "
+        << point.p << ", "
+        << point.i << ", "
+        << point.d << "\n";
   }
 
   return oss.str();
